@@ -161,11 +161,21 @@ transactionid |           |         | 1600550 | ShareLock        | false -- оз
 
 мы также можем увидеть информацию какой процесс блокирует
 
+         postgres=# SELECT locktype, mode, granted, pid, pg_blocking_pids(pid) AS wait_for FROM pg_locks WHERE relation = 'test_text'::regclass;
+         locktype |       mode       | granted |  pid  | wait_for
+        ----------+------------------+---------+-------+----------
+         relation | RowExclusiveLock | t       | 97054 | {}
+        (1 row)
+
+        
+        
         postgres=*# SELECT pg_blocking_pids(97054);
          pg_blocking_pids
         ------------------
          {97057}
         (1 row)
+
+
 
 
         postgres=*# SELECT * FROM pg_stat_activity WHERE pid = ANY(pg_blocking_pids(97054)) \gx
