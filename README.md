@@ -197,7 +197,7 @@ transactionid |           |         | 1600550 | ShareLock        | false -- оз
         postgres=*#
 
 
-Сессия 3
+##### Сессия 3
 
 
         postgres=# SELECT pg_backend_pid();
