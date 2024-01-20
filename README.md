@@ -292,5 +292,80 @@ FROM pg_locks WHERE pid = 97393;
 
 # 3. Воспроизведите взаимоблокировку трех транзакций. Можно ли разобраться в ситуации постфактум, изучая журнал сообщений?
 
+##### Сессия 1
+        postgres=# select * from test_text;
+           t
+        -------
+         test2
+         test1
+         test3
+        (3 rows)
+        
+        Time: 0.426 ms
+        postgres=# begin;
+        BEGIN
+        Time: 0.111 ms
+        postgres=*# update test_text set t = 'DL' where t = 'test1';
+        UPDATE 1
+        Time: 0.361 ms
+        postgres=*# ^C
+        postgres=*# update test_text set t = 'DL' where t = 'test2';
+        ^CCancel request sent
+        ERROR:  canceling statement due to user request
+        CONTEXT:  while updating tuple (0,2) in relation "test_text"
+        Time: 28034.165 ms (00:28.034)
+        postgres=!#
+
+##### Сессия 2
+
+        postgres=# begin;
+        BEGIN
+        postgres=*# update test_text set t = 'DL' where t = 'test2';
+        UPDATE 1
+        postgres=*# update test_text set t = 'DL' where t = 'test3';
+        UPDATE 1
+        postgres=*#
+        
+##### Сессия 3
+
+        postgres=# begin
+        postgres-# ;
+        BEGIN
+        postgres=*#
+        postgres=*# update test_text set t = 'DL' where t = 'test3';
+        UPDATE 1
+        postgres=*# update test_text set t = 'DL' where t = 'test1';
+        ERROR:  deadlock detected
+        DETAIL:  Process 97393 waits for ShareLock on transaction 1600558; blocked by process 97057.
+        Process 97057 waits for ShareLock on transaction 1600559; blocked by process 97054.
+        Process 97054 waits for ShareLock on transaction 1600560; blocked by process 97393.
+        HINT:  See server log for query details.
+        CONTEXT:  while updating tuple (0,18) in relation "test_text"
+        postgres=!#
+
+
+Информация в логе
+
+                2024-01-20 07:43:53.985 EST [97054] LOG:  process 97054 still waiting for ShareLock on transaction 1600560 after 1000.143 ms
+                2024-01-20 07:43:53.985 EST [97054] DETAIL:  Process holding the lock: 97393. Wait queue: 97054.
+                2024-01-20 07:43:53.985 EST [97054] CONTEXT:  while updating tuple (0,19) in relation "test_text"
+                2024-01-20 07:43:53.985 EST [97054] STATEMENT:  update test_text set t = 'DL' where t = 'test3';
+                2024-01-20 07:43:59.673 EST [97393] LOG:  process 97393 detected deadlock while waiting for ShareLock on transaction 1600558 after 1000.154 ms
+                2024-01-20 07:43:59.673 EST [97393] DETAIL:  Process holding the lock: 97057. Wait queue: .
+                2024-01-20 07:43:59.673 EST [97393] CONTEXT:  while updating tuple (0,18) in relation "test_text"
+                2024-01-20 07:43:59.673 EST [97393] STATEMENT:  update test_text set t = 'DL' where t = 'test1';
+                2024-01-20 07:43:59.674 EST [97393] ERROR:  deadlock detected
+                2024-01-20 07:43:59.674 EST [97393] DETAIL:  Process 97393 waits for ShareLock on transaction 1600558; blocked by process 97057.
+                        Process 97057 waits for ShareLock on transaction 1600559; blocked by process 97054.
+                        Process 97054 waits for ShareLock on transaction 1600560; blocked by process 97393.
+                        Process 97393: update test_text set t = 'DL' where t = 'test1';
+                        Process 97057: update test_text set t = 'DL' where t = 'test2';
+                        Process 97054: update test_text set t = 'DL' where t = 'test3';
+                2024-01-20 07:43:59.674 EST [97393] HINT:  See server log for query details.
+                2024-01-20 07:43:59.674 EST [97393] CONTEXT:  while updating tuple (0,18) in relation "test_text"
+                2024-01-20 07:43:59.674 EST [97393] STATEMENT:  update test_text set t = 'DL' where t = 'test1';
+                2024-01-20 07:43:59.674 EST [97054] LOG:  process 97054 acquired ShareLock on transaction 1600560 after 6688.470 ms
+
+В логе очень информативные данные о том что прозошёл deadlock, какими процессами заблокировано и каким запросом произошло данное событие.
 
 # 4. Могут ли две транзакции, выполняющие единственную команду UPDATE одной и той же таблицы (без where), заблокировать друг друга?
